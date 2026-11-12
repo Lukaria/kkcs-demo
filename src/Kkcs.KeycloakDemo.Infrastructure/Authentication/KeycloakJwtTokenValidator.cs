@@ -1,5 +1,4 @@
 using System.Security.Claims;
-using System.Text.Json;
 using Kkcs.KeycloakDemo.Infrastructure.Keycloak;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.JsonWebTokens;
@@ -72,58 +71,7 @@ public sealed class KeycloakJwtTokenValidator
             "preferred_username",
             ClaimTypes.Role);
 
-        AddKeycloakRoles(identity);
+        KeycloakRoleClaims.Add(identity, _options.ClientId);
         return new ClaimsPrincipal(identity);
-    }
-
-    private void AddKeycloakRoles(ClaimsIdentity identity)
-    {
-        using var realmDocument = ReadJson(identity.FindFirst("realm_access")?.Value);
-        if (realmDocument is not null
-            && realmDocument.RootElement.TryGetProperty("roles", out var realmRoles))
-        {
-            AddRoles(identity, realmRoles);
-        }
-
-        using var resourceDocument = ReadJson(identity.FindFirst("resource_access")?.Value);
-        if (resourceDocument is not null
-            && resourceDocument.RootElement.TryGetProperty(_options.ClientId, out var clientAccess)
-            && clientAccess.TryGetProperty("roles", out var clientRoles))
-        {
-            AddRoles(identity, clientRoles);
-        }
-    }
-
-    private static void AddRoles(ClaimsIdentity identity, JsonElement roles)
-    {
-        if (roles.ValueKind != JsonValueKind.Array)
-        {
-            return;
-        }
-
-        foreach (var role in roles.EnumerateArray())
-        {
-            if (role.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(role.GetString()))
-            {
-                identity.AddClaim(new Claim(ClaimTypes.Role, role.GetString()!));
-            }
-        }
-    }
-
-    private static JsonDocument? ReadJson(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return null;
-        }
-
-        try
-        {
-            return JsonDocument.Parse(value);
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
     }
 }

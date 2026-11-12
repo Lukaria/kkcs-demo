@@ -19,8 +19,4 @@ public sealed class KeycloakOptions
     public string Issuer => $"{BaseUrl.TrimEnd('/')}/realms/{Realm}";
 
     public string MetadataAddress => $"{Issuer}/.well-known/openid-configuration";
-
-    public string TokenEndpoint => $"{Issuer}/protocol/openid-connect/token";
-
-    public string LogoutEndpoint => $"{Issuer}/protocol/openid-connect/logout";
 }

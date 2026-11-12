@@ -1,5 +1,4 @@
 using FluentValidation;
-using Kkcs.KeycloakDemo.Application.Exceptions;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Kkcs.KeycloakDemo.Api.Middleware;
@@ -23,17 +22,6 @@ public sealed class ExceptionHandlingMiddleware(
                     group => group.Select(failure => failure.ErrorMessage).ToArray());
 
             await WriteProblem(context, StatusCodes.Status400BadRequest, "Validation failed", errors);
-        }
-        catch (KeycloakRequestException exception)
-        {
-            var statusCode = (int)exception.StatusCode;
-            if (statusCode < 400 || statusCode > 499)
-            {
-                statusCode = StatusCodes.Status502BadGateway;
-            }
-
-            logger.LogWarning(exception, "Keycloak rejected a request");
-            await WriteProblem(context, statusCode, "Keycloak request failed", detail: exception.Message);
         }
         catch (UnauthorizedAccessException exception)
         {

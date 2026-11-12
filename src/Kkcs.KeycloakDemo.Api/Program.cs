@@ -2,7 +2,6 @@ using Kkcs.KeycloakDemo.Api.Authentication;
 using Kkcs.KeycloakDemo.Api.Middleware;
 using Kkcs.KeycloakDemo.Application;
 using Kkcs.KeycloakDemo.Infrastructure;
-using Microsoft.AspNetCore.Authentication;
 using Microsoft.OpenApi.Models;
 using Serilog;
 
@@ -19,8 +18,7 @@ try
 
     builder.Services.AddApplication();
     builder.Services.AddInfrastructure(builder.Configuration);
-    builder.Services.AddAuthentication("KeycloakJwt")
-        .AddScheme<AuthenticationSchemeOptions, KeycloakJwtChallengeHandler>("KeycloakJwt", null);
+    builder.Services.AddKeycloakAuthentication(builder.Configuration);
     builder.Services.AddAuthorization();
     builder.Services.AddControllers();
     builder.Services.AddEndpointsApiExplorer();
@@ -28,9 +26,9 @@ try
     {
         options.SwaggerDoc("v1", new OpenApiInfo
         {
-            Title = "Keycloak Authentication Demo API",
+            Title = "Keycloak Confidential Client Demo API",
             Version = "v1",
-            Description = "Custom JWT parsing and validation with Keycloak."
+            Description = "Authorization Code Flow + PKCE for browsers and custom Bearer JWT validation."
         });
 
         var bearerScheme = new OpenApiSecurityScheme
@@ -60,12 +58,13 @@ try
     app.UseSerilogRequestLogging();
     app.UseSwagger();
     app.UseSwaggerUI();
+    app.UseAuthentication();
     app.UseMiddleware<KeycloakJwtAuthenticationMiddleware>();
     app.UseAuthorization();
     app.MapControllers();
     app.MapGet("/", () => Results.Redirect("/swagger")).AllowAnonymous();
 
-    Log.Information("Starting Keycloak authentication demo API");
+    Log.Information("Starting Keycloak confidential client demo API");
     app.Run();
 }
 catch (Exception exception)

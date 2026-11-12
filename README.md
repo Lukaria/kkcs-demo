@@ -1,17 +1,17 @@
-# Keycloak Authentication Demo API
+# Keycloak Confidential Client Demo API
 
-Демонстрационный ASP.NET Core 8 API с собственным middleware для проверки JWT access token, выданного Keycloak. Refresh token возвращается при входе и используется для завершения сеанса.
+Ветка `confidential` демонстрирует вход через **Authorization Code Flow + PKCE** с confidential-клиентом Keycloak. Пароль вводится только на странице Keycloak: ASP.NET-приложение не получает учётные данные пользователя. Access, refresh и ID tokens сохраняются в зашифрованной authentication session и не возвращаются браузеру как JSON.
+
+Дополнительно сохранён собственный middleware для проверки Bearer JWT при вызовах API из других клиентов.
 
 ## Стек и структура
 
 - `src/Kkcs.KeycloakDemo.Domain` — доменная модель пользователя.
-- `src/Kkcs.KeycloakDemo.Application` — MediatR-команды и запросы, контракты, FluentValidation, Mapster.
-- `src/Kkcs.KeycloakDemo.Infrastructure` — Keycloak OIDC-клиент, получение JWKS и проверка JWT, измерение uptime.
-- `src/Kkcs.KeycloakDemo.Api` — middleware, эндпоинты, Swagger, Serilog и композиция приложения.
+- `src/Kkcs.KeycloakDemo.Application` — MediatR-запросы, контракты, FluentValidation и Mapster.
+- `src/Kkcs.KeycloakDemo.Infrastructure` — получение JWKS, проверка Bearer JWT, Keycloak claims и uptime.
+- `src/Kkcs.KeycloakDemo.Api` — OIDC/cookie-аутентификация, контроллеры, Swagger и Serilog.
 
-Используются MediatR, FluentValidation, Mapster, Serilog и Swashbuckle (Swagger). Проекты `Domain` и `Application` не зависят от ASP.NET Core или Keycloak SDK.
-
-## Запуск
+## Настройка и запуск
 
 1. Запустите Keycloak и PostgreSQL:
 
@@ -19,54 +19,48 @@
    docker compose up -d
    ```
 
-2. Один раз настройте realm, клиента и пользователя по инструкции [docs/keycloak-setup.md](docs/keycloak-setup.md).
-3. Запустите API на хосте:
+2. Настройте realm, confidential-клиент и пользователя по инструкции [docs/keycloak-setup.md](docs/keycloak-setup.md).
+3. Сохраните секрет клиента локально:
+
+   ```bash
+   dotnet user-secrets set "Keycloak:ClientSecret" "ВАШ_СЕКРЕТ" --project src/Kkcs.KeycloakDemo.Api
+   ```
+
+4. Запустите API:
 
    ```bash
    dotnet run --project src/Kkcs.KeycloakDemo.Api --launch-profile http
    ```
 
-4. Откройте Swagger: <http://localhost:5273/swagger>.
+5. Откройте <http://localhost:5273/login> в браузере. После входа Keycloak вернёт на `/me`.
 
-Настройки подключения находятся в `src/Kkcs.KeycloakDemo.Api/appsettings.json`. `RequireHttpsMetadata=false` допустимо только для локального HTTP Keycloak.
+Swagger доступен по адресу <http://localhost:5273/swagger>. Интерактивный OIDC-вход удобнее проверять непосредственно в браузере, а не через кнопку Swagger **Try it out**.
 
 ## Эндпоинты
 
 | Метод | Путь | Аутентификация | Назначение |
 |---|---|---|---|
-| `POST` | `/login` | Не требуется | Получить access и refresh tokens по логину/паролю |
-| `POST` | `/logout` | Не требуется | Завершить Keycloak-сеанс по refresh token |
-| `GET` | `/me` | Bearer access token | Получить claims и роли текущего пользователя |
+| `GET` | `/login` | Не требуется | Перенаправить на Keycloak Authorization Code Flow + PKCE |
+| `GET/POST` | `/signin-oidc` | Обрабатывается OIDC middleware | Принять authorization code и создать cookie-сессию |
+| `GET` | `/logout` | Cookie-сессия | Завершить локальную и Keycloak-сессии |
+| `GET` | `/me` | Cookie или Bearer JWT | Получить claims и роли текущего пользователя |
 | `GET` | `/uptime` | Не требуется | Время запуска и uptime процесса |
 
-Для `/me` в Swagger нажмите **Authorize** и вставьте только access token, без префикса `Bearer`.
+Без cookie `/me` вызывает OIDC challenge и перенаправляет на Keycloak. При переданном `Authorization: Bearer ...` собственный middleware вместо cookie выполняет JWT-проверку; malformed или недействительный токен получает `401`.
 
-Примеры запросов:
+## Как устроена аутентификация
 
-```bash
-curl -X POST http://localhost:5273/login \
-  -H "Content-Type: application/json" \
-  -d '{"username":"demo-user","password":"Demo123!"}'
+`AddKeycloakAuthentication` настраивает:
 
-curl http://localhost:5273/me -H "Authorization: Bearer ACCESS_TOKEN"
+- confidential client с `ClientSecret`;
+- Authorization Code Flow и PKCE;
+- проверку `state` и `nonce` стандартным OIDC middleware;
+- `openid profile email offline_access` scopes;
+- сохранение access/refresh tokens через `SaveTokens=true`;
+- cookie-сессию и realm/client role claims.
 
-curl -X POST http://localhost:5273/logout \
-  -H "Content-Type: application/json" \
-  -d '{"refreshToken":"REFRESH_TOKEN"}'
-```
-
-## Как работает собственный middleware
-
-`KeycloakJwtAuthenticationMiddleware` читает `Authorization: Bearer ...`, а `KeycloakJwtTokenValidator`:
-
-- загружает OpenID Connect metadata и JWKS Keycloak с кэшированием ключей;
-- проверяет подпись RS256, `iss`, `aud`, `exp`/`nbf` и обязательное наличие подписи;
-- допускает только access token с `typ=Bearer`;
-- создаёт аутентифицированный `ClaimsPrincipal`;
-- преобразует realm- и client-роли Keycloak в `ClaimTypes.Role`.
-
-Стандартный `JwtBearerHandler` не используется. `UseAuthorization()` и `.RequireAuthorization()` работают с `HttpContext.User`, установленным собственным middleware.
+Порядок middleware: `UseAuthentication()` восстанавливает cookie-пользователя, затем `KeycloakJwtAuthenticationMiddleware` при наличии Bearer token заменяет principal результатом собственной JWT-проверки. Проверяются подпись RS256, JWKS, `iss`, `aud`, `exp`/`nbf` и `typ=Bearer`.
 
 ## Ограничения демо
 
-Вход по логину/паролю использует Keycloak Direct Access Grants (Resource Owner Password Credentials), чтобы API можно было проверить непосредственно из Swagger. Для production-приложений используйте Authorization Code Flow + PKCE на стороне клиента, HTTPS, секреты вне репозитория и более строгую политику токенов. Не передавайте refresh token в `Authorization`-заголовке.
+Для production необходимы HTTPS, `CookieSecurePolicy.Always`, защищённое постоянное хранилище Data Protection keys и серверное хранилище сессий вместо размещения токенов в cookie. Автоматическое обновление access token по refresh token в этом примере не реализовано. Секреты нельзя фиксировать в репозитории.

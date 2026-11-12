@@ -19,10 +19,11 @@ public static class DependencyInjection
                 "Keycloak BaseUrl must be an absolute URL.")
             .Validate(options => !string.IsNullOrWhiteSpace(options.Realm), "Keycloak Realm is required.")
             .Validate(options => !string.IsNullOrWhiteSpace(options.ClientId), "Keycloak ClientId is required.")
+            .Validate(options => !string.IsNullOrWhiteSpace(options.ClientSecret),
+                "Keycloak ClientSecret is required for a confidential client.")
             .Validate(options => !string.IsNullOrWhiteSpace(options.Audience), "Keycloak Audience is required.")
             .ValidateOnStart();
 
-        services.AddHttpClient<IKeycloakAuthenticationService, KeycloakAuthenticationService>();
         services.AddSingleton<KeycloakJwtTokenValidator>();
         services.AddSingleton<IUptimeProvider, SystemUptimeProvider>();
 
