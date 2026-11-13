@@ -18,6 +18,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    networks:
+      - kkcs-demo
 
   keycloak:
     image: quay.io/keycloak/keycloak:26.0
@@ -38,6 +40,11 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    networks:
+      - kkcs-demo
 
 volumes:
   postgres-data:
+
+networks:
+  kkcs-demo:
